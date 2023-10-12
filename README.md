@@ -97,6 +97,64 @@ todo := TODO{
 	Status:         status,
 }
 ```
+这是一个可以通过form-data 传参的方式..  让我知道了form-data如何传参。
+## 列出单号 lists.go
+```go
+package list
+import (
+	"github.com/gin-gonic/gin"
+	"net/http"
+)
+// getTodos 获取所有 TODO
+func GetTodos(c *gin.Context) {
+	LoadTodosFromFile() // 重新加载文件数据
+	c.JSON(http.StatusOK, todos)
+}
+```
+这个功能就是从文件中加载数据，（数据是结构体切片）然后用c.json返回即可
+## 查询单号 check.go
+```go
+package list
+
+import (
+	"github.com/gin-gonic/gin"
+	"net/http"
+)
+
+// getTodoByTrackingNumber 根据跟踪号查询 TODO
+func GetTodoByTrackingNumber(c *gin.Context) {
+	trackingNumber := c.Param("tracking_number")
+	for _, todo := range todos {
+		if todo.TrackingNumber == trackingNumber {
+			c.JSON(http.StatusOK, todo)
+			return
+		}
+	}
+
+	c.JSON(http.StatusNotFound, gin.H{"error": "TODO not found"})
+}
+```
+这个功能的实现 让我学会了路径参数的输入，以前我是直接在URL上面改写路径参数，也没有管params中query和paht参数的选项有什么用
+同时功能的实现 就是从文件中现有切片（数据是储存在切片中）中的数据与我输入的数据相匹配，如果匹配则输出匹配的那个结构体，否则，输出error
+```go
+URL /list/todo/:{tracking_number}
+输入 123456789
+输出{
+    "tracking_number": "987654321",
+    "time": "",
+    "location": "",
+    "recipient": "Jane Smith",
+    "status": "Delivered"
+}
+输入 55664646
+输出{
+    "error": "TODO not found"
+}
+```
+## 更新单号  renewal.go
+```go
+
+```
 分别设有 发送单号（send.go）  删除单号（delete.go）  更新单号（renewal.go）  列出单号（lists.go） 查询单号（check.go） 文件操作（file.go） 路由封装（deliveries.go） 六个部分
 所有部分 集结与 list 包中 ， 在 main.go 中可以通过import("todolist/list")来调用  
 send.go /list/todo          body/json 输入
