@@ -1,5 +1,18 @@
 # 项目结构
 ### 总体实现了快递的一些基本功能，发送删除更新列出查询的功能
+## 载体形式
+```go
+type TODO struct {
+	TrackingNumber string `json:"tracking_number"` // 跟踪号
+	Time           string `json:"time"`            // 时间
+	Location       string `json:"location"`        // 位置
+	Recipient      string `json:"recipient"`       // 收件人
+	Status         string `json:"status"`          // 状态
+}
+
+var todos []TODO // 存储所有的 TODO
+```
+用一个结构体切片来暂时储存数据
 ## 主函数 main.go
 ```go
 package main
@@ -80,6 +93,7 @@ func AddTodoFromForm(c *gin.Context) {
     "message": "TODO added successfully"
 }
 ```
+---
 ```go
 //一种写法
 //`c.PostForm` 是 Gin 框架中的一个方法，用于获取客户端 POST 请求中的表单数据, 需要在body 中的post-data 输入，而不是json
@@ -153,63 +167,207 @@ URL /list/todo/:{tracking_number}
 ```
 ## 更新单号  renewal.go
 ```go
+package list
 
+import (
+	"github.com/gin-gonic/gin"
+	"net/http"
+)
+
+// 更新TODO
+func UpdateTodoByTrackingNumber(c *gin.Context) {
+	trackingNumber := c.Param("tracking_number")
+	found := false
+
+	for i, todo := range todos {
+		if todo.TrackingNumber == trackingNumber {
+			//设定一个bool值，可以更加明显的区分是否成功更新
+			found = true
+			var updatedTodo TODO
+			//ShouldBindJson 和 BindJson  前者更高级，严谨
+
+			//更新TODO
+			if err := c.ShouldBindJSON(&updatedTodo); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request data"})
+				return
+			}
+			// 更新TODO
+			//具体的意思就是 如果查到的单号数据不为空，则更新一下。
+			if updatedTodo.Time != "" {
+				todo.Time = updatedTodo.Time
+			}
+			if updatedTodo.Location != "" {
+				todo.Location = updatedTodo.Location
+			}
+			if updatedTodo.Recipient != "" {
+				todo.Recipient = updatedTodo.Recipient
+			}
+			if updatedTodo.Status != "" {
+				todo.Status = updatedTodo.Status
+			}
+			todos[i] = todo
+			SaveTodosToFile()
+			break
+		}
+	}
+
+	// http.StatusNotFound = 404
+	if !found {
+		c.JSON(http.StatusNotFound, gin.H{"error": "TODO not found"})
+		return
+	}
+	//`gin.H{}` 是 map 类型， 写入键值对就行
+	c.JSON(http.StatusOK, gin.H{"message": "TODO updated successfully"})
+}
 ```
-分别设有 发送单号（send.go）  删除单号（delete.go）  更新单号（renewal.go）  列出单号（lists.go） 查询单号（check.go） 文件操作（file.go） 路由封装（deliveries.go） 六个部分
-所有部分 集结与 list 包中 ， 在 main.go 中可以通过import("todolist/list")来调用  
-send.go /list/todo          body/json 输入
-delete.go /list/todo/{tracking_number}    params paths参数输入
-renewal.go /list/todo/{tracking_number}   params paths参数输入  body/json 输入
-check.go  /list/todo/{tracking_number}    params paths 参数输入
-lists.go /list/todo    点击发送即可
+这个功能通过c.param实现传参，  使用一系列的if语句来判断如果结构体不是为空，则修改结构体，最后用savetodosfile 储存数据到文件
+```go
+URL /list/todo/{:tracking_number}
+param输入  987654321
+json输入  {       "tracking_number": "987654321",
+        "time": "woshiren",
+        "location": "nishiren",
+        "recipient": "Jennifer Brown",
+        "status": "Delivered"}
+输出 ：{"message": "TODO updated successfully"} or {"error": "TODO not found"}
+```
+## 删除单号  delete.go
+```go
+package list
+import (
+	"github.com/gin-gonic/gin"
+	"net/http"
+)
+// 删除TODO
+func DeleteTodoByTrackingNumber(c *gin.Context) {
+	trackingNumber := c.Param("tracking_number")
+	found := false
 
-/二创作过程
-作为一个 对go语言什么都没有涉及的新手， 面对demo中的gin框架，http协议，go语法.. 陌生的知识 ， 虽然学的很慢， 但是一直在学
+	for i, todo := range todos {
+		if todo.TrackingNumber == trackingNumber {
+			todos = append(todos[:i], todos[i+1:]...) // 从切片中删除匹配到的TODO
+			found = true
+			break
+		}
+	}
 
-首先我觉得自己前期还是没有理解边做边练的意思
-过分的追求 “全面掌握go语法的知识”  ，想要把所有的知识都学过以后才开始动手
-到了第五天 ，我发现我除了一个demo 啥都没有
-同时我对 Gin json apifox 的了解 甚少
+	if found {
+		SaveTodosToFile()
+		c.JSON(http.StatusOK, gin.H{"message": "TODO deleted successfully"})
+		return
+	} else {
+		c.JSON(http.StatusNotFound, gin.H{"message": "TODO not found"})
+		return
+	}
+}
+```
+具体功能的实现就是先查找，然后删除，然后保存到文件-- 细节就是可以通过一个found变量 来判断是否查找成功
+```go
+URL /list/todo/{:tracking_number}
+c.param  tracking_number
+响应 {"message": "TODO not found"} or {"message": "TODO deleted successfully"}
+```
+## 文件储存   file.go
+```go
+package list
 
-到了第六天或者第七天的时候
-我选择了让 GPT来帮我写项目 ，我来负责看项目， 理解项目
-前几天是囫囵吞枣度过的，  一知半解的记住了形式  要json传递  要使用bindjson（&todo）之类的/某个的代码形式 差不多能实现某个内容
-渐渐地到了十多天的时候， 写 删除todo更新todo的时候，我已经能够自己思路较为清晰地 打出自己想要打出的代码（虽然后期还是得靠GPT）
-同时  前五六天 疯狂（没看进去脑子）的知识点 模模糊糊地加深了印象。
-我也能够 理解 apifox 中 params json post-data 的意思
+import (
+	"encoding/json"
+	"log"
+	"os"
+)
+// addTodo 添加 TODO
+func AddTodo(todo *TODO) {
+	todos = append(todos, *todo)
+	SaveTodosToFile() // 保存到文件
+}
+// 创建文件
+// 我通过重新创建文件 ， 并初始化文件， 把main 函数的长度缩减
+func CreateFile() {
+	//判断文件存不存在
+	_, error := os.Stat("a.txt")
+	// 文件不存在就创建一个  ， 存在的话就创建一个覆盖他
+	file, err := os.OpenFile("a.txt", os.O_RDWR|os.O_CREATE, 0644)
+	if err != nil {
+		log.Println("Error opening file:", err)
+		return
+	}
+	defer file.Close()
+	stat, _ := file.Stat()  //检测状态
+	if stat.Size() == 0 || error != nil {
+		// 添加五个 TODO 项
+		AddTodo(&TODO{
+			TrackingNumber: "123456789",
+			Time:           "2023-09-30 10:00",
+			Location:       "Warehouse A",
+			Recipient:      "John Doe",
+			Status:         "In Transit",
+		})
+	..... 增加一些数字
+	}
+}
 
-最后几天 我给代码进行了模块化 ，对学长提出的改进建议进行了改进。
+// loadTodosFromFile 从文件加载 TODO 列表
+func LoadTodosFromFile() {
+	file, err := os.Open("a.txt")
+	if err != nil {
+		log.Println("Error opening file:", err)
+		return
+	}
+	defer file.Close()      //defer关键字 ，延迟关闭
+	decoder := json.NewDecoder(file) 
+	err = decoder.Decode(&todos)    //将json数据解码 放到切片之中 ，通过todos的间接改变值
+	if err != nil {
+		log.Println("Error decoding todos:", err)
+		return
+	}
+}
 
-说实话 在第六天第七天，那个时候 我没有一刻不是想放弃这个面试任务的---我觉得没有方向，觉得我虽然学了知识，但是没有用处
-但是 我 一直想着方丈在群里说的话： 只要你肯学，杭电助手就欢迎。
-我觉得  这句话一直激励着我 哪怕坐在电脑前没有方向的时候，哪怕每天晚上学到很晚也不知道干啥的时候，我还是会去寻找 这个任务的方向， 我需要提升的方向，
-同时
-我一点也不认可 学的快乐最重要
-但我认可 “爱飞的鸟”  学长说的   敲代码敲得快乐最重要
-我自己也尝到了-- 代码运行起来后的快乐最重要
-/三 感谢
-对于指导者（我一直是对此保持感激心态的）
-1.GPT  和他对话中， 极大地削减了我心中的苦闷， 还能够快速地获得新知识 。是他在前期我啥都不知道的时候 无声给予他所知道的代码。 可以说 每天 和 GPT深情交流的时间是最多的  
-由此也提高我问问题的水平  ，非常感谢。
-2.CSDN  茫茫文章中寻找对自己有意义的文章 ，在CSDN中可以获取 自己想要明白的一部分知识 ，（但终究有些文字过于生涩专业 难以理解 惭愧）非常感谢
-3.B站   无论是老郭的go语言 还是 不知名UP 的GIN框架搭建介绍 ， json 路由  等 视频的讲解，即使不能一点就通 ，还是能够让我或多或少对此有点了解 ， 非常感谢
-4.学长   我觉得 学长永远都是 激励着让我不要放弃的源泉。  做任务的时候 （哪怕再痛苦的时候）  依旧可以从学长中感受到他们的温暖。 
-言传身教   从学长身上  我可以明显的感受到他们 想要培养我们自主学习操作的能力 -- （一开始我还抱怨学长不直接告诉答案  非常抱歉）  
-一起做任务的人有很多 ，学长自身的事情也有很多 ，但他们仍旧能够抽出时间来 帮助我 ，非常感谢。  感谢方丈，感谢爱飞的鸟，感谢iyear
-5.任务简介  说实话刚刚开始拿到任务的时候 我是很蒙蔽的 ，都不知道要干啥 ，但是任务简介中 向我们推送了许多权威的视频和文档 ，可以让我们不用再去碰壁同时更快地理解后端的意义和知识点， 非常感谢
-6.家人   有姐姐和哥哥每天听我抱怨，你们总是能够在我想要放弃的时候 疏散我心中的怨气， 让我整理好心态继续向前，非常感谢
-7. 自己  感谢自己 能够活着做到这个项目，虽然项目只完成了 一些小功能，没有数据库也没有接口鉴权 ，但我觉得我还是迈出了一步 ，至少我没有放弃，一直在努力学习。
+// saveTodosToFile 将 TODO 列表保存到文件
+func SaveTodosToFile() {
+	file, err := os.OpenFile("a.txt", os.O_RDWR|os.O_CREATE, 755)
+	if err != nil {
+		log.Println("Error creating file:", err)
+		return
+	}
+	defer file.Close()
 
+	encoder := json.NewEncoder(file)   //将切片中的数据编码为json格式，并通过encoder将其写入到文件中
+	err = encoder.Encode(todos)
+	if err != nil {
+		log.Println("Error encoding todos:", err)  //日志
+		return
+	}
+}
+```
+1. AddTodo 函数就是往切片中增加数据，同时储存到文件中
+2. CreateFile 函数是创建文件， 如果没有文件或者文件为空，则会（创建文件）以及往文件中填充一些数据。
+3. LoadTodosFromFile 函数 是从文件中加载数据，通过newdecoder 解码json 放入切片使用
+4. saveTodosToFile 函数 是把现存的切片用newencoder编码成json 储存到文件中
+---
+---
+# 创作过程
+### 1-5 痛苦
+一开始我是抱着高中的学习态度去学习的，作为一个 对go语言什么都没有涉及的新手，对边学边做的方法并不相信。 这几天每天都很痛苦，明明感觉学了很多东西，但是好像又对项目没啥作用
+### 7-12 尝试
+开始尝试边学边练（某个一起做这个项目的同学推荐），GPT，CSDN，Bilibli,想做什么搜什么，一开始完全是照抄别人的代码，问题是还实现不了，只能让GPT一遍又一遍地修改代码，
+就这样我逐渐了解了代码的含义和怎样的思路去实现我想要的功能，也对Gin,restful,接口，APIfox有了更深的认识
+### 13-15 完善
+基本上有了方向， 我开始往代码中塞功能，听取学长的意见改代码，在完善的过程中，我注意到了许多代码中的细节（比如路程参数中要加冒号）  
+同时我对APIfox的使用有了新的认识，至少不是单纯地点点发送按钮
+### 收获
+学习了restful风格， Gin框架， go基本语法 ，APIfox的简单使用 ， URL的了解， http协议
+---
+# 总结
+1. 学的很辛苦 也很快乐。  幸苦的是没有思路的那几天，快乐的是代码跑出来的界面
+2. 善用GPT  通过GPT我开始慢慢了解后端方面的简单代码实现
+3. 边学边练，练什么学什么， 比只看课好用多了 ，印象还很深刻
+4. 社团学长很友好， 群很活跃， 每次做不下去的时候 看看群活跃就感觉又可以坚持一下
+5. 提高自主学习能力 ， 学长大多是给一个链接和文档让我们自己去学习，而不是直接手把手教导
+6.提高问问题的问题，无论是问学长 ，还是问GPT
+7. go语言真方便
 
-/四 收获
-首先我了解基本的语法的使用
-对gin框架的基本 认识
-restful 风格 --一种很简约有规则的风格
-对URL 接口（一种约定） http协议的了解
-对APIfox params query json 的使用
-对路径的{：}的了解
-以及一些go语言库函数的使用 （我觉得这方面的认识真的得靠实践 而不是做笔记）
-
+**学的快乐最重要**
 
 
 
