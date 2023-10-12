@@ -1,7 +1,102 @@
-# hhhyc
-/一项目结构
-该程序  实现了快递运行的基本功能（来源于某次B站教学视频讲解URL的案例）
+# 项目结构
+### 总体实现了快递的一些基本功能，发送删除更新列出查询的功能
+## 主函数 main.go
+```go
+package main
+import (
+	"todolist/list"
+)
+func main() {
+	router := list.Deliveries()  //打开 该函数中的路由
+	router.Run(":8080")  //监听请求
+}
+```
+主函数导入了一个“todolist/list”的包（具体功能存储在这个包中）  
+## 路由封装 -- 模块化   deliveries.go
+```go
+package list
+import (
+	"github.com/gin-gonic/gin"
+)
+func Deliveries() *gin.Engine {
+	router := gin.Default()
+	CreateFile()
+	LoadTodosFromFile() // 从文件加载 TODO 列表
+	delivery := router.Group("/list")
+	{
+		// /todo/:tracking_number 这边一定要加‘：’  不加冒号的话就无法实现连接
+		delivery.GET("/todos", GetTodos)                                      // 获取所有 TODO
+		delivery.GET("/todo/:tracking_number", GetTodoByTrackingNumber)       // 根据跟踪号查询 TODO
+		delivery.POST("/todo", AddTodoFromForm)                               //发送单号TODO
+		delivery.PUT("/todo/:tracking_number", UpdateTodoByTrackingNumber)    //更新单号TODO
+		delivery.DELETE("/todo/:tracking_number", DeleteTodoByTrackingNumber) //删除单号TODO
+	} //注意： 函数后面不用加（）
+	return router
+}
+```
+在deliveries 函数中 创建了一个Gin引擎 ， 并设置相应的路由 ，最后返回这个引擎给main.go    
+个人感觉  这部分最难一块 是前期路径的理解和 一开始路径参数没加冒号导致APIfox 实现不了功能的悲伤
 
+同时  对于GET POST PUT DELETE 这4项操作    同样是输入，也都可以通过json实现响应 ，为什么POST一定是增加（初学时百思不得其解）  
+直到学习了 restful风格， 才知道这五个操作是一种规范，是让代码更具有有序性和规范性。
+## 发送单号 send.go
+```go
+package list
+import (
+	"fmt"
+	"github.com/gin-gonic/gin"
+	"net/http"
+)
+// addTodoFromForm 从表单数据添加 TODO
+func AddTodoFromForm(c *gin.Context) {
+	var entodo TODO
+	if err := c.ShouldBindJSON(&entodo); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invailid request data"})
+		return
+	}
+	AddTodo(&entodo)
+	fmt.Println("ok")
+	//http.StatusOK 和 http.StatusBadRequest  是两种状态码  也可以用200和400表示
+	// 一个表示请求成功  ，一个表示请求存在错误
+	c.JSON(http.StatusOK, gin.H{"message": "TODO added successfully"})
+}
+```
+1. 首先这个函数他需要传入一个 gin.context类型的指针，包含了http请求的一些信息（设置响应状态，发送响应，请求参数）
+2. shouldbindjson 是将json数据绑定到结构体上，说白了就是使用它 就可以 人为输入数据，同时bindjson和他差不多，但是没他严谨
+3. c.json()是一个返回的函数，前面的表示状态，后面的表示返回的内容
+总体来说， 这个功能是通过json渲染 ，我可以在body/json 输入数据  并通过AddTodo把数据加到文件之中。
+```go
+**实现案例**
+{  
+  "tracking_number": "ABC123",  
+  "time": "2023-10-12 10:00:00",  
+  "location": "New York",  
+  "recipient": "John Doe",  
+  "status": "Delivered"  
+}
+**URL** /list/todo
+**返回**
+{
+    "message": "TODO added successfully"
+}
+```
+```go
+//一种写法
+//`c.PostForm` 是 Gin 框架中的一个方法，用于获取客户端 POST 请求中的表单数据, 需要在body 中的post-data 输入，而不是json
+trackingNumber := c.PostForm("tracking_number")
+time := c.PostForm("time")
+location := c.PostForm("location")
+recipient := c.PostForm("recipient")
+status := c.PostForm("status")
+//这是 一个赋值的过程， 上面的代码得到time 的值 然后赋值给 todo.Time 为time
+todo := TODO{
+	TrackingNumber: trackingNumber,
+	Time:           time,
+	Location:       location,
+	Recipient:      recipient,
+	Status:         status,
+}
+```
 分别设有 发送单号（send.go）  删除单号（delete.go）  更新单号（renewal.go）  列出单号（lists.go） 查询单号（check.go） 文件操作（file.go） 路由封装（deliveries.go） 六个部分
 所有部分 集结与 list 包中 ， 在 main.go 中可以通过import("todolist/list")来调用  
 send.go /list/todo          body/json 输入
